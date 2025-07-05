@@ -136,13 +136,14 @@ export class SoundProtocol {
             console.log(`[SOUND] Sending: ${message.type} (ID: ${message.id})`);
             
             // Encode message to sound using ggwave
-            const protocol = this.ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST;
+            // Using AUDIBLE_NORMAL (0) for better reliability over distance
+            const protocol = this.ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_NORMAL;
             
             const waveform = this.ggwave.encode(
                 this.ggwaveInstance, 
                 jsonStr, 
                 protocol, 
-                10 // volume level
+                15 // increased volume level from 10 to 15
             );
             
             console.log(`[SOUND] Encoded ${waveform.length} bytes to audio`);
