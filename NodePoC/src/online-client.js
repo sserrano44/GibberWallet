@@ -16,6 +16,7 @@ export class OnlineClient {
         this.provider = new ethers.JsonRpcProvider(rpcUrl);
         this.chainId = chainId;
         this.sound = new SoundProtocol(soundTimeout, soundRetries);
+        this.connectedWalletAddress = null;
         
         // Setup readline interface for user input
         this.rl = readline.createInterface({
@@ -145,6 +146,45 @@ export class OnlineClient {
     }
 
     /**
+     * Connect to offline wallet and get address
+     */
+    async connectToWallet() {
+        try {
+            // Start listening for responses
+            this.sound.startListening((message) => this.handleResponse(message));
+            
+            // Send connect to establish connection and get wallet address
+            console.log('[ONLINE] Connecting to offline wallet...');
+            const connect = MessageProtocol.createConnect();
+            
+            if (!await this.sound.sendMessage(connect)) {
+                console.log('[ONLINE] Failed to send connect request');
+                return false;
+            }
+            
+            // Wait for connect response
+            console.log('[ONLINE] Waiting for response...');
+            const connectResponse = await this.sound.waitForMessage(MessageType.CONNECT_RESPONSE, 10000);
+            
+            if (!connectResponse) {
+                console.log('[ONLINE] No response received - offline wallet may not be listening');
+                return false;
+            }
+            
+            const walletAddress = connectResponse.payload.address;
+            this.connectedWalletAddress = walletAddress;
+            console.log(`[ONLINE] Connected to wallet: ${walletAddress}`);
+            return true;
+            
+        } catch (error) {
+            console.log(`[ONLINE] Connection error: ${error.message}`);
+            return false;
+        } finally {
+            this.sound.stopListening();
+        }
+    }
+
+    /**
      * Send transaction request and handle response
      */
     async sendTransactionRequest(txRequest) {
@@ -152,25 +192,31 @@ export class OnlineClient {
             // Start listening for responses
             this.sound.startListening((message) => this.handleResponse(message));
             
-            // Send ping to establish connection
-            console.log('[ONLINE] Sending ping to offline wallet...');
-            const ping = MessageProtocol.createPing();
-            
-            if (!await this.sound.sendMessage(ping)) {
-                console.log('[ONLINE] Failed to send ping');
-                return null;
+            // Auto-connect if not already connected
+            if (!this.connectedWalletAddress) {
+                console.log('[ONLINE] Auto-connecting to offline wallet...');
+                const connect = MessageProtocol.createConnect();
+                
+                if (!await this.sound.sendMessage(connect)) {
+                    console.log('[ONLINE] Failed to send connect request');
+                    return null;
+                }
+                
+                // Wait for connect response
+                console.log('[ONLINE] Waiting for connect response...');
+                const connectResponse = await this.sound.waitForMessage(MessageType.CONNECT_RESPONSE, 10000);
+                
+                if (!connectResponse) {
+                    console.log('[ONLINE] No connect response received, offline wallet may not be listening');
+                    return null;
+                }
+                
+                const walletAddress = connectResponse.payload.address;
+                this.connectedWalletAddress = walletAddress;
+                console.log(`[ONLINE] Connected to wallet: ${walletAddress}`);
             }
             
-            // Wait for pong
-            console.log('[ONLINE] Waiting for pong...');
-            const pong = await this.sound.waitForMessage(MessageType.PONG, 10000);
-            
-            if (!pong) {
-                console.log('[ONLINE] No pong received, offline wallet may not be listening');
-                return null;
-            }
-            
-            console.log('[ONLINE] Pong received, sending transaction request...');
+            console.log('[ONLINE] Sending transaction request...');
             
             // Send transaction request
             if (!await this.sound.sendMessage(txRequest)) {
@@ -287,24 +333,33 @@ export class OnlineClient {
     async runInteractiveMenu() {
         while (true) {
             console.log('\n[ONLINE] Choose an option:');
-            console.log('1. Send ETH transfer');
-            console.log('2. Send ERC-20 transfer');
-            console.log('3. Check transaction status');
-            console.log('4. Exit');
+            if (this.connectedWalletAddress) {
+                console.log(`Connected wallet: ${this.connectedWalletAddress}`);
+            } else {
+                console.log('No wallet connected');
+            }
+            console.log('1. Connect to offline wallet');
+            console.log('2. Send ETH transfer');
+            console.log('3. Send ERC-20 transfer');
+            console.log('4. Check transaction status');
+            console.log('5. Exit');
             
-            const choice = await this.askQuestion('Enter choice (1-4): ');
+            const choice = await this.askQuestion('Enter choice (1-5): ');
             
             switch (choice.trim()) {
                 case '1':
-                    await this.handleEthTransfer();
+                    await this.handleConnect();
                     break;
                 case '2':
-                    await this.handleErc20Transfer();
+                    await this.handleEthTransfer();
                     break;
                 case '3':
-                    await this.handleTransactionStatus();
+                    await this.handleErc20Transfer();
                     break;
                 case '4':
+                    await this.handleTransactionStatus();
+                    break;
+                case '5':
                     console.log('[ONLINE] Exiting...');
                     this.rl.close();
                     return;
@@ -315,15 +370,33 @@ export class OnlineClient {
     }
 
     /**
+     * Handle connect to offline wallet
+     */
+    async handleConnect() {
+        try {
+            const success = await this.connectToWallet();
+            if (!success) {
+                console.log('[ONLINE] Failed to connect to offline wallet');
+            }
+        } catch (error) {
+            console.log('[ONLINE] Connect error:', error.message);
+        }
+    }
+
+    /**
      * Handle ETH transfer input
      */
     async handleEthTransfer() {
         try {
-            const fromAddr = await this.askQuestion('From address: ');
+            if (!this.connectedWalletAddress) {
+                console.log('[ONLINE] No wallet connected. Please connect to a wallet first.');
+                return;
+            }
+            
             const toAddr = await this.askQuestion('To address: ');
             const amount = await this.askQuestion('Amount in ETH: ');
             
-            const txHash = await this.sendEthTransfer(fromAddr.trim(), toAddr.trim(), parseFloat(amount));
+            const txHash = await this.sendEthTransfer(this.connectedWalletAddress, toAddr.trim(), parseFloat(amount));
             if (txHash) {
                 await this.waitForConfirmation(txHash);
             }
@@ -337,13 +410,17 @@ export class OnlineClient {
      */
     async handleErc20Transfer() {
         try {
-            const fromAddr = await this.askQuestion('From address: ');
+            if (!this.connectedWalletAddress) {
+                console.log('[ONLINE] No wallet connected. Please connect to a wallet first.');
+                return;
+            }
+            
             const tokenAddr = await this.askQuestion('Token contract address: ');
             const toAddr = await this.askQuestion('To address: ');
             const amount = await this.askQuestion('Amount (in token units): ');
             
             const txHash = await this.sendErc20Transfer(
-                fromAddr.trim(), 
+                this.connectedWalletAddress, 
                 tokenAddr.trim(), 
                 toAddr.trim(), 
                 BigInt(amount)

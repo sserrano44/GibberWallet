@@ -143,14 +143,14 @@ class Demo {
         
         console.log(`[DEMO] Transaction request created (ID: ${txRequest.id})`);
         
-        // Step 2: Simulate ping/pong handshake
-        console.log('[DEMO] 2. Simulating ping/pong handshake...');
+        // Step 2: Simulate connect handshake
+        console.log('[DEMO] 2. Simulating connect handshake...');
         
-        const ping = MessageProtocol.createPing();
-        console.log(`[DEMO] Online -> Offline: PING (${ping.id})`);
+        const connect = MessageProtocol.createConnect();
+        console.log(`[DEMO] Online -> Offline: CONNECT (${connect.id})`);
         
-        const pong = MessageProtocol.createPong(ping.id);
-        console.log(`[DEMO] Offline -> Online: PONG (${pong.id})`);
+        const connectResponse = MessageProtocol.createConnectResponse(this.walletAddress, connect.id);
+        console.log(`[DEMO] Offline -> Online: CONNECT_RESPONSE (${connectResponse.id}) - Address: ${this.walletAddress}`);
         
         // Step 3: Send transaction request
         console.log('[DEMO] 3. Sending transaction request...');
@@ -249,12 +249,12 @@ class Demo {
     testMessageProtocol() {
         console.log('\n[DEMO] Testing message protocol...');
         
-        // Test ping/pong
-        const ping = MessageProtocol.createPing();
-        console.log(`[DEMO] Created ping: ${ping.toJSON()}`);
+        // Test connect/connect_response
+        const connect = MessageProtocol.createConnect();
+        console.log(`[DEMO] Created connect: ${connect.toJSON()}`);
         
-        const pong = MessageProtocol.createPong(ping.id);
-        console.log(`[DEMO] Created pong: ${pong.toJSON()}`);
+        const connectResponse = MessageProtocol.createConnectResponse(this.walletAddress, connect.id);
+        console.log(`[DEMO] Created connect response: ${connectResponse.toJSON()}`);
         
         // Test transaction request
         const txRequest = MessageProtocol.createTxRequest(
@@ -279,8 +279,8 @@ class Demo {
         const sound = new SoundProtocol();
         
         // Test message sending
-        const ping = MessageProtocol.createPing();
-        const sendResult = await sound.sendMessage(ping);
+        const connect = MessageProtocol.createConnect();
+        const sendResult = await sound.sendMessage(connect);
         console.log(`[DEMO] Send test: ${sendResult ? 'PASS' : 'FAIL'}`);
         
         // Test listening (simulated)
@@ -289,8 +289,8 @@ class Demo {
         });
         
         // Simulate receiving a message
-        const pong = MessageProtocol.createPong(ping.id);
-        sound.simulateReceiveMessage(pong);
+        const connectResponse = MessageProtocol.createConnectResponse(this.walletAddress, connect.id);
+        sound.simulateReceiveMessage(connectResponse);
         
         sound.stopListening();
         console.log('[DEMO] Sound protocol test completed!');

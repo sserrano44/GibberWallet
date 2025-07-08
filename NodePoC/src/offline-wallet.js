@@ -22,21 +22,20 @@ export class OfflineWallet {
             output: process.stdout
         });
         
-        console.log(`[OFFLINE] Wallet initialized with address: ${this.crypto.getAddress()}`);
+        console.log(`[OFFLINE] Wallet ready: ${this.crypto.getAddress()}`);
     }
 
     /**
      * Start the offline wallet in listening mode
      */
     async start() {
-        console.log('[OFFLINE] Starting offline wallet...');
+        console.log('[OFFLINE] Starting...');
         this.isRunning = true;
         
         // Start listening for sound messages
         await this.sound.startListening((message) => this.handleMessage(message));
         
-        console.log('[OFFLINE] Offline wallet is listening for sound messages...');
-        console.log('[OFFLINE] Press Ctrl+C to stop');
+        console.log('[OFFLINE] Listening for sound messages (Press Ctrl+C to stop)');
         
         // Keep the process running
         try {
@@ -44,7 +43,6 @@ export class OfflineWallet {
                 await this.sleep(1000);
             }
         } catch (error) {
-            console.log('[OFFLINE] Shutting down...');
             this.stop();
         }
     }
@@ -56,14 +54,14 @@ export class OfflineWallet {
         this.isRunning = false;
         this.sound.stopListening();
         this.rl.close();
-        console.log('[OFFLINE] Offline wallet stopped');
+        console.log('[OFFLINE] Stopped');
     }
 
     /**
      * Handle incoming messages
      */
     async handleMessage(message) {
-        console.log(`[OFFLINE] Received message: ${message.type}`);
+        console.log(`[OFFLINE] Received: ${message.type}`);
         
         // Validate protocol version
         if (!MessageProtocol.validateVersion(message)) {
@@ -77,24 +75,25 @@ export class OfflineWallet {
         
         // Handle different message types
         switch (message.type) {
-            case MessageType.PING:
-                await this.handlePing(message);
+            case MessageType.CONNECT:
+                await this.handleConnect(message);
                 break;
             case MessageType.TX_REQUEST:
                 await this.handleTransactionRequest(message);
                 break;
             default:
-                console.log(`[OFFLINE] Unhandled message type: ${message.type}`);
+                console.log(`[OFFLINE] Unknown message type: ${message.type}`);
         }
     }
 
     /**
-     * Handle ping messages
+     * Handle connect messages
      */
-    async handlePing(message) {
-        console.log('[OFFLINE] Received ping, sending pong...');
-        const pong = MessageProtocol.createPong(message.id);
-        await this.sound.sendMessage(pong);
+    async handleConnect(message) {
+        console.log('[OFFLINE] Sending wallet address');
+        const address = this.crypto.getAddress();
+        const connectResponse = MessageProtocol.createConnectResponse(address, message.id);
+        await this.sound.sendMessage(connectResponse);
     }
 
     /**
@@ -156,8 +155,7 @@ export class OfflineWallet {
                     signedTx.hash
                 );
                 
-                console.log(`[OFFLINE] Transaction signed successfully`);
-                console.log(`[OFFLINE] Transaction hash: ${signedTx.hash}`);
+                console.log(`[OFFLINE] Transaction signed: ${signedTx.hash}`);
                 await this.sound.sendMessage(response);
             } else {
                 // Send error response
@@ -169,7 +167,7 @@ export class OfflineWallet {
             }
             
         } catch (error) {
-            console.log(`[OFFLINE] Error processing transaction:`, error.message);
+            console.log(`[OFFLINE] Transaction error: ${error.message}`);
             const errorMsg = MessageProtocol.createError(
                 `Transaction processing failed: ${error.message}`,
                 message.id

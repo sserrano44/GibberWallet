@@ -26,36 +26,26 @@ async function initializeGgwave() {
         let parameters;
         try {
             parameters = ggwave.getDefaultParameters();
-            console.log('[SOUND] Got default parameters');
         } catch (paramError) {
-            console.log('[SOUND] Failed to get default parameters:', paramError.message);
-            // Try with null/undefined parameters
             parameters = null;
         }
         
         try {
             ggwaveInstance = ggwave.init(parameters);
-            console.log(`[SOUND] ggwave.init() returned: ${ggwaveInstance}`);
         } catch (initError) {
-            console.log('[SOUND] ggwave.init() failed:', initError.message);
-            // Try alternative initialization
             try {
                 ggwaveInstance = ggwave.init();
-                console.log(`[SOUND] ggwave.init() (no params) returned: ${ggwaveInstance}`);
             } catch (altError) {
-                console.log('[SOUND] Alternative init failed:', altError.message);
+                console.log('[SOUND] Init failed:', altError.message);
             }
         }
         
         GGWAVE_AVAILABLE = (ggwaveInstance !== null && ggwaveInstance !== undefined);
-        console.log('[SOUND] ggwave loaded and initialized successfully');
-        console.log(`[SOUND] Created ggwaveInstance: ${GGWAVE_AVAILABLE ? 'success' : 'failed'} (ID: ${ggwaveInstance})`);
+        console.log('[SOUND] Audio protocol ready');
         
         return { ggwave, ggwaveInstance };
     } catch (error) {
-        console.log('[SOUND] ggwave not available, using simulation mode');
-        console.log('[SOUND] Install with: npm install ggwave');
-        console.log('[SOUND] Error:', error.message);
+        console.log('[SOUND] Audio not available, using simulation mode');
         GGWAVE_AVAILABLE = false;
         throw error;
     }
@@ -101,13 +91,10 @@ export class SoundProtocol {
                 this.ggwaveInstance = result.ggwaveInstance;
                 this.ggwave = result.ggwave;
                 this.isInitialized = true;
-                console.log(`[SOUND] SoundProtocol initialized - ggwaveInstance: ready (ID: ${this.ggwaveInstance})`);
             } else {
                 this.isInitialized = false;
-                console.log(`[SOUND] SoundProtocol initialized - ggwaveInstance: missing (result: ${result ? 'present' : 'null'})`);
             }
         } catch (error) {
-            console.log('[SOUND] Failed to initialize ggwave:', error.message);
             this.isInitialized = false;
         }
     }
@@ -118,7 +105,6 @@ export class SoundProtocol {
     async sendMessage(message) {
         // Wait for initialization if not ready
         if (!this.isInitialized) {
-            console.log('[SOUND] Waiting for ggwave initialization...');
             let attempts = 0;
             while (!this.isInitialized && attempts < 10) {
                 await this.sleep(100);
@@ -133,11 +119,11 @@ export class SoundProtocol {
 
         try {
             const jsonStr = message.toJSON();
-            console.log(`[SOUND] Sending: ${message.type} (ID: ${message.id})`);
+            console.log(`[SOUND] Sending: ${message.type}`);
             
             // Encode message to sound using ggwave
-            // Using AUDIBLE_NORMAL (0) for better reliability over distance
-            const protocol = this.ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_NORMAL;
+            // Using AUDIBLE_FAST to match GibberWeb
+            const protocol = this.ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST;
             
             const waveform = this.ggwave.encode(
                 this.ggwaveInstance, 
@@ -145,8 +131,6 @@ export class SoundProtocol {
                 protocol, 
                 15 // increased volume level from 10 to 15
             );
-            
-            console.log(`[SOUND] Encoded ${waveform.length} bytes to audio`);
             
             // Play the waveform through speakers
             await this.playAudio(waveform);
@@ -173,23 +157,16 @@ export class SoundProtocol {
 
         // Wait for initialization if needed
         if (!this.isInitialized) {
-            console.log('[SOUND] Waiting for ggwave initialization before starting listener...');
             let attempts = 0;
             while (!this.isInitialized && attempts < 20) {
                 await this.sleep(100);
                 attempts++;
             }
         }
-
-        const instanceStatus = (this.ggwaveInstance === null || this.ggwaveInstance === undefined) ? 'missing' : `present(ID:${this.ggwaveInstance})`;
-        console.log(`[SOUND] startListening check - isInitialized: ${this.isInitialized}, ggwaveInstance: ${instanceStatus}`);
         
         if (this.isInitialized && (this.ggwaveInstance !== null && this.ggwaveInstance !== undefined)) {
-            console.log('[SOUND] Listening for real audio messages...');
             this.startRecording();
             this.listenLoop();
-        } else {
-            console.log('[SOUND] Listening mode started (simulated - ggwave not available)');
         }
     }
 
@@ -199,7 +176,6 @@ export class SoundProtocol {
     stopListening() {
         this.isListening = false;
         this.stopRecording();
-        console.log('[SOUND] Stopped listening');
     }
 
     /**
@@ -229,7 +205,6 @@ export class SoundProtocol {
                 });
                 
                 speaker.on('close', () => {
-                    console.log('[SOUND] Audio playback completed');
                     resolve();
                 });
                 
@@ -277,15 +252,14 @@ export class SoundProtocol {
                 // Add to buffer
                 this.audioBuffer.push(...float32Array);
                 
-                // Log audio activity if significant
-                if (maxLevel > 0.01) {
-                    console.log(`[SOUND] Audio detected - Level: ${(maxLevel * 100).toFixed(1)}%, Buffer size: ${this.audioBuffer.length}`);
+                // Log audio activity if significant (reduced threshold)
+                if (maxLevel > 0.1) {
+                    console.log(`[SOUND] Audio detected - Level: ${(maxLevel * 100).toFixed(1)}%`);
                 }
                 
                 // Process buffer more frequently for better responsiveness
                 // Process every 0.25 seconds instead of 1 second
                 if (this.audioBuffer.length >= this.sampleRate / 4) {
-                    console.log('[SOUND] Processing audio buffer...');
                     this.processAudioBuffer();
                 }
             });
@@ -294,7 +268,6 @@ export class SoundProtocol {
                 console.error('[SOUND] Recording error:', err);
             });
             
-            console.log('[SOUND] Started recording from microphone');
         } catch (error) {
             console.error('[SOUND] Failed to start recording:', error);
         }
@@ -307,7 +280,6 @@ export class SoundProtocol {
         if (this.recording) {
             this.recording.stop();
             this.recording = null;
-            console.log('[SOUND] Stopped recording');
         }
     }
     
@@ -316,8 +288,6 @@ export class SoundProtocol {
      */
     processAudioBuffer() {
         if (!this.isInitialized || (this.ggwaveInstance === null || this.ggwaveInstance === undefined) || !this.receivedCallback) {
-            const instanceStatus = (this.ggwaveInstance === null || this.ggwaveInstance === undefined) ? 'missing' : `present(ID:${this.ggwaveInstance})`;
-            console.log(`[SOUND] Cannot process buffer - initialized: ${this.isInitialized}, ggwaveInstance: ${instanceStatus}, receivedCallback: ${this.receivedCallback ? 'present' : 'missing'}`);
             // Don't clear the buffer if we're just waiting for initialization
             if (!this.isInitialized) {
                 return; // Keep the audio buffer for when initialization completes
@@ -329,19 +299,20 @@ export class SoundProtocol {
         try {
             // Create Float32Array from buffer
             const audioData = new Float32Array(this.audioBuffer);
-            console.log(`[SOUND] Attempting to decode ${audioData.length} samples`);
             
             // Try to decode with ggwave
             try {
-                const decodedData = this.ggwave.decode(this.ggwaveInstance, audioData);
+                // Convert Float32Array to Int8Array like GibberWeb does
+                const buffer = Buffer.from(audioData.buffer);
+                const int8Data = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.length);
+                
+                const decodedData = this.ggwave.decode(this.ggwaveInstance, int8Data);
                 
                 if (decodedData && decodedData.length > 0) {
-                    console.log(`[SOUND] Decoded ${decodedData.length} bytes`);
                     try {
                         const messageStr = new TextDecoder().decode(decodedData);
-                        console.log(`[SOUND] Decoded string: ${messageStr.substring(0, 100)}...`);
                         const messageData = JSON.parse(messageStr);
-                        console.log(`[SOUND] Successfully decoded message: ${messageData.type}`);
+                        console.log(`[SOUND] Received: ${messageData.type}`);
                         
                         // Call the callback with the decoded message
                         const message = Message.fromJSON(messageStr);
@@ -351,22 +322,16 @@ export class SoundProtocol {
                         this.audioBuffer = [];
                         return; // Exit early on successful decode
                     } catch (parseError) {
-                        console.log(`[SOUND] Failed to parse decoded data: ${parseError.message}`);
                         // Not a valid message, continue accumulating
                     }
                 }
                 // No valid data decoded - this is normal for most audio
             } catch (decodeError) {
                 // This is normal - most audio doesn't contain ggwave data
-                // Only log if it's not the common "Cannot pass non-string" error
-                if (!decodeError.message.includes('Cannot pass non-string')) {
-                    console.log(`[SOUND] Decode error: ${decodeError.message}`);
-                }
             }
             
             // Keep only last second of audio to avoid memory issues
             if (this.audioBuffer.length > this.sampleRate * 2) {
-                console.log('[SOUND] Trimming audio buffer to prevent overflow');
                 this.audioBuffer = this.audioBuffer.slice(-this.sampleRate);
             }
             
@@ -379,15 +344,11 @@ export class SoundProtocol {
      * Listen loop for real audio messages
      */
     async listenLoop() {
-        console.log('[SOUND] Real audio listening loop started');
-        
         // The actual audio processing happens in the recording callbacks
         // This loop just keeps the listening state active
         while (this.isListening) {
             await this.sleep(100);
         }
-        
-        console.log('[SOUND] Real audio listening loop stopped');
     }
 
     /**

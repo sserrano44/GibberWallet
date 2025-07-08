@@ -4,6 +4,8 @@
  */
 
 import record from 'node-record-lpcm16';
+import fs from 'fs';
+import path from 'path';
 
 // Initialize ggwave
 let ggwave = null;
@@ -42,6 +44,15 @@ async function initGgwave() {
         
         const success = (ggwaveInstance !== null && ggwaveInstance !== undefined);
         console.log(`✅ ggwave ready, instance: ${success ? 'created' : 'failed'} (ID: ${ggwaveInstance})`);
+        
+        // Log available protocols
+        if (success && ggwave.ProtocolId) {
+            console.log('📡 Available protocols:');
+            for (const [name, id] of Object.entries(ggwave.ProtocolId)) {
+                console.log(`   - ${name}: ${id}`);
+            }
+        }
+        
         return success;
     } catch (error) {
         console.error('❌ ggwave failed:', error.message);
@@ -54,6 +65,20 @@ class LiveMonitor {
         this.sampleRate = 48000;
         this.audioBuffer = [];
         this.isRunning = false;
+        this.debugLogPath = `debug-audio-${Date.now()}.log`;
+        this.audioCapturePath = `debug-audio-${Date.now()}.raw`;
+        this.debugFile = fs.createWriteStream(this.debugLogPath);
+        this.captureFile = null;
+        this.captureCount = 0;
+        
+        this.log(`Debug session started at ${new Date().toISOString()}`);
+        this.log(`Sample rate: ${this.sampleRate}`);
+        this.log(`Debug log: ${this.debugLogPath}`);
+    }
+    
+    log(message) {
+        const timestamp = new Date().toISOString();
+        this.debugFile.write(`[${timestamp}] ${message}\n`);
     }
 
     start() {
@@ -130,10 +155,55 @@ class LiveMonitor {
         }
 
         const audioData = new Float32Array(this.audioBuffer);
+        
+        // Calculate audio statistics for debugging
+        let maxSample = 0;
+        let avgLevel = 0;
+        for (let i = 0; i < audioData.length; i++) {
+            maxSample = Math.max(maxSample, Math.abs(audioData[i]));
+            avgLevel += Math.abs(audioData[i]);
+        }
+        avgLevel /= audioData.length;
+        
+        // Log decode attempt if audio is significant
+        if (maxSample > 0.01) {
+            this.log(`=== DECODE ATTEMPT ${++this.captureCount} ===`);
+            this.log(`Buffer size: ${audioData.length} samples`);
+            this.log(`Max amplitude: ${(maxSample * 100).toFixed(2)}%`);
+            this.log(`Average level: ${(avgLevel * 100).toFixed(4)}%`);
+            
+            // Save audio capture when significant audio detected
+            if (!this.captureFile && maxSample > 0.05) {
+                const capturePath = `capture-${this.captureCount}-${Date.now()}.raw`;
+                this.captureFile = fs.createWriteStream(capturePath);
+                this.log(`Started audio capture: ${capturePath}`);
+                
+                // Write the audio data as raw float32
+                const buffer = Buffer.from(audioData.buffer);
+                this.captureFile.write(buffer);
+                
+                // Close capture after 2 seconds
+                setTimeout(() => {
+                    if (this.captureFile) {
+                        this.captureFile.end();
+                        this.captureFile = null;
+                        this.log(`Closed audio capture`);
+                    }
+                }, 2000);
+            }
+        }
 
         try {
+            // Convert Float32Array to Int8Array like GibberWeb does
+            const buffer = Buffer.from(audioData.buffer);
+            const int8Data = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.length);
+            
             // ggwave.decode automatically detects the protocol from the audio
-            const decoded = ggwave.decode(ggwaveInstance, audioData);
+            const decoded = ggwave.decode(ggwaveInstance, int8Data);
+            
+            if (maxSample > 0.01) {
+                this.log(`ggwave.decode returned: ${decoded ? `${decoded.length} bytes` : 'null/undefined'}`);
+            }
             
             if (decoded && decoded.length > 0) {
                 try {
@@ -146,14 +216,27 @@ class LiveMonitor {
                     process.stdout.write(`DATA(${decoded.length}bytes)`);
                 }
             } else {
-                // Show we're actively trying to decode
-                process.stdout.write('LISTENING');
+                // Show decode attempt with audio level
+                if (maxSample > 0.01) {
+                    process.stdout.write(`DECODE_ATTEMPT(max:${(maxSample*100).toFixed(1)}%)`);
+                } else {
+                    process.stdout.write('LISTENING');
+                }
             }
         } catch (error) {
             if (!error.message.includes('Cannot pass non-string')) {
                 process.stdout.write(`ERR:${error.message.substring(0,10)}`);
+                if (maxSample > 0.01) {
+                    this.log(`Decode error: ${error.message}`);
+                    this.log(`Error stack: ${error.stack}`);
+                }
             } else {
-                process.stdout.write('SILENCE');
+                if (maxSample > 0.01) {
+                    process.stdout.write(`ACTIVE(${(maxSample*100).toFixed(1)}%)`);
+                    this.log(`Decode attempt threw standard error (audio present but no ggwave data)`);
+                } else {
+                    process.stdout.write('SILENCE');
+                }
             }
         }
     }
@@ -163,7 +246,22 @@ class LiveMonitor {
         if (this.recording) {
             this.recording.stop();
         }
+        
+        // Close any open capture file
+        if (this.captureFile) {
+            this.captureFile.end();
+            this.captureFile = null;
+        }
+        
+        // Write summary and close debug log
+        this.log(`\n=== SESSION SUMMARY ===`);
+        this.log(`Total decode attempts: ${this.captureCount}`);
+        this.log(`Session ended at ${new Date().toISOString()}`);
+        this.debugFile.end();
+        
         console.log('\n\n🛑 Monitor stopped');
+        console.log(`📝 Debug log saved to: ${this.debugLogPath}`);
+        console.log(`🎵 Audio captures saved as: capture-*.raw files`);
     }
 }
 

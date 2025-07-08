@@ -98,8 +98,8 @@ async function sendTestMessage(message) {
         console.log(`📤 Sending test message: "${message}"`);
         
         // Encode message to sound using ggwave
-        // Using AUDIBLE_NORMAL (0) for better reliability
-        const protocol = ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_NORMAL;
+        // Using AUDIBLE_FAST to match GibberWeb
+        const protocol = ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST;
         
         const waveform = ggwave.encode(
             ggwaveInstance, 
