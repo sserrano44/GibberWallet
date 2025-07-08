@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
  * Message types supported by the protocol
  */
 export const MessageType = {
-    PING: 'ping',
-    PONG: 'pong',
+    CONNECT: 'connect',
+    CONNECT_RESPONSE: 'connect_response',
     TX_REQUEST: 'tx_request',
     TX_RESPONSE: 'tx_response',
     ACK: 'ack',
@@ -58,24 +58,27 @@ export class MessageProtocol {
     static readonly PROTOCOL_VERSION = '1.0';
 
     /**
-     * Create a ping message
+     * Create a connect message
      */
-    static createPing(): Message {
+    static createConnect(): Message {
         return new Message(
             MessageProtocol.PROTOCOL_VERSION,
-            MessageType.PING,
+            MessageType.CONNECT,
             {}
         );
     }
 
     /**
-     * Create a pong response message
+     * Create a connect response message
      */
-    static createPong(pingId: string): Message {
+    static createConnectResponse(address: string, connectId: string): Message {
         return new Message(
             MessageProtocol.PROTOCOL_VERSION,
-            MessageType.PONG,
-            { received_id: pingId }
+            MessageType.CONNECT_RESPONSE,
+            { 
+                address: address,
+                received_id: connectId
+            }
         );
     }
 
@@ -116,8 +119,10 @@ export class MessageProtocol {
             MessageProtocol.PROTOCOL_VERSION,
             MessageType.TX_RESPONSE,
             {
-                signed_transaction: signedTx,
-                transaction_hash: txHash
+                signedTransaction: {
+                    raw: signedTx,
+                    hash: txHash
+                }
             }
         );
     }

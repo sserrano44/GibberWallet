@@ -189,22 +189,22 @@ export class WalletClient extends EventEmitter {
    */
   private async sendTransactionRequest(txRequest: Message): Promise<TransactionResponse> {
     try {
-      // Step 1: Send ping and wait for pong
-      console.log('Sending ping to offline wallet...');
-      const ping = MessageProtocol.createPing();
+      // Step 1: Send connect and wait for connect_response
+      console.log('Sending connect to offline wallet...');
+      const connect = MessageProtocol.createConnect();
       
-      if (!await this.audio.sendMessage(ping)) {
-        throw new Error('Failed to send ping');
+      if (!await this.audio.sendMessage(connect)) {
+        throw new Error('Failed to send connect');
       }
 
-      console.log('Waiting for pong...');
-      const pong = await this.audio.waitForMessage(MessageType.PONG, 10000);
+      console.log('Waiting for connect response...');
+      const connectResponse = await this.audio.waitForMessage(MessageType.CONNECT_RESPONSE, 10000);
       
-      if (!pong) {
-        throw new Error('No pong received from offline wallet');
+      if (!connectResponse) {
+        throw new Error('No connect response received from offline wallet');
       }
 
-      console.log('Pong received, sending transaction request...');
+      console.log('Connect response received, sending transaction request...');
 
       // Step 2: Send transaction request
       if (!await this.audio.sendMessage(txRequest)) {
@@ -220,14 +220,14 @@ export class WalletClient extends EventEmitter {
         throw new Error('No transaction response received');
       }
 
-      if (!response.payload || !response.payload.signed_transaction) {
+      if (!response.payload || !response.payload.signedTransaction || !response.payload.signedTransaction.raw) {
         throw new Error('Invalid transaction response');
       }
 
       console.log('Signed transaction received, broadcasting...');
 
       // Step 4: Broadcast signed transaction
-      const signedTx = response.payload.signed_transaction;
+      const signedTx = response.payload.signedTransaction.raw;
       const txHash = await this.crypto.broadcastTransaction(signedTx);
 
       console.log(`Transaction broadcasted successfully: ${txHash}`);
@@ -288,8 +288,11 @@ export class WalletClient extends EventEmitter {
     console.log('Received message:', message.type, message.id);
     
     switch (message.type) {
-      case MessageType.PONG:
-        console.log('Pong received from offline wallet');
+      case MessageType.CONNECT_RESPONSE:
+        console.log('Connect response received from offline wallet');
+        if (message.payload && message.payload.address) {
+          console.log('Wallet address:', message.payload.address);
+        }
         break;
       case MessageType.TX_RESPONSE:
         console.log('Transaction response received');
