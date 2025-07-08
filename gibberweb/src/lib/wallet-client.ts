@@ -18,6 +18,7 @@ export class WalletClient extends EventEmitter {
   private config: WalletConfig | null = null;
   private connectionStatus: ConnectionStatus = { connected: false };
   private audioStatus: AudioStatus = { isListening: false, isTransmitting: false, level: 0 };
+  private walletAddress: string | null = null;
 
   constructor() {
     super();
@@ -89,6 +90,58 @@ export class WalletClient extends EventEmitter {
    */
   stopListening(): void {
     this.audio.stopListening();
+  }
+
+  /**
+   * Connect to offline wallet and get address
+   */
+  async connectToOfflineWallet(): Promise<string | null> {
+    try {
+      // Make sure audio is initialized
+      if (!await this.audio.initialize()) {
+        throw new Error('Failed to initialize audio');
+      }
+
+      // Start listening for responses
+      if (!await this.startListening()) {
+        throw new Error('Failed to start listening');
+      }
+
+      console.log('Sending connect to offline wallet...');
+      const connect = MessageProtocol.createConnect();
+      
+      if (!await this.audio.sendMessage(connect)) {
+        throw new Error('Failed to send connect message');
+      }
+
+      console.log('Waiting for connect response...');
+      const connectResponse = await this.audio.waitForMessage(MessageType.CONNECT_RESPONSE, 10000);
+      
+      if (!connectResponse) {
+        throw new Error('No connect response received from offline wallet');
+      }
+
+      // Store wallet address from connect response
+      if (connectResponse.payload && connectResponse.payload.address) {
+        this.walletAddress = connectResponse.payload.address;
+        console.log('Connected to wallet:', this.walletAddress);
+        
+        // Emit connection status update with wallet address
+        this.connectionStatus = {
+          ...this.connectionStatus,
+          walletAddress: this.walletAddress || undefined
+        };
+        this.emit('connectionChanged', this.connectionStatus);
+        
+        return this.walletAddress;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to connect to offline wallet:', error);
+      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      return null;
+    }
   }
 
   /**
@@ -204,6 +257,12 @@ export class WalletClient extends EventEmitter {
         throw new Error('No connect response received from offline wallet');
       }
 
+      // Store wallet address from connect response
+      if (connectResponse.payload && connectResponse.payload.address) {
+        this.walletAddress = connectResponse.payload.address;
+        console.log('Connected to wallet:', this.walletAddress);
+      }
+
       console.log('Connect response received, sending transaction request...');
 
       // Step 2: Send transaction request
@@ -282,6 +341,13 @@ export class WalletClient extends EventEmitter {
   }
 
   /**
+   * Get connected wallet address
+   */
+  getWalletAddress(): string | null {
+    return this.walletAddress;
+  }
+
+  /**
    * Handle received audio messages
    */
   private handleMessage(message: Message): void {
@@ -291,7 +357,14 @@ export class WalletClient extends EventEmitter {
       case MessageType.CONNECT_RESPONSE:
         console.log('Connect response received from offline wallet');
         if (message.payload && message.payload.address) {
-          console.log('Wallet address:', message.payload.address);
+          this.walletAddress = message.payload.address;
+          console.log('Wallet address:', this.walletAddress);
+          // Emit connection status update with wallet address
+          this.connectionStatus = {
+            ...this.connectionStatus,
+            walletAddress: this.walletAddress || undefined
+          };
+          this.emit('connectionChanged', this.connectionStatus);
         }
         break;
       case MessageType.TX_RESPONSE:

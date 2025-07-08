@@ -15,14 +15,23 @@ export default function Home() {
   const [audioStatus, setAudioStatus] = useState<AudioStatus>({ isListening: false, isTransmitting: false, level: 0 });
   const [config, setConfig] = useState<WalletConfig | null>(null);
   const [balance, setBalance] = useState<string>('0');
-  const [address, setAddress] = useState<string>('');
 
   // Initialize wallet client
   useEffect(() => {
     const client = new WalletClient();
     
     // Set up event listeners
-    client.on('connectionChanged', setConnectionStatus);
+    client.on('connectionChanged', (status: ConnectionStatus) => {
+      setConnectionStatus(status);
+      // Automatically refresh balance when wallet address is received
+      if (status.walletAddress && client) {
+        client.getBalance(status.walletAddress).then(bal => {
+          setBalance(bal);
+        }).catch(err => {
+          console.error('Failed to get balance:', err);
+        });
+      }
+    });
     client.on('audioChanged', setAudioStatus);
     client.on('transactionSent', (txHash: string) => {
       console.log('Transaction sent:', txHash);
@@ -42,32 +51,25 @@ export default function Home() {
     };
   }, []); // No dependencies - wallet client should persist across connections
 
-  const handleConnect = async (walletConfig: WalletConfig, walletAddress: string) => {
+  const handleConnect = async (walletConfig: WalletConfig) => {
     if (!walletClient) return;
 
     const success = await walletClient.initialize(walletConfig);
     if (success) {
       setConfig(walletConfig);
-      setAddress(walletAddress);
-      // Pass walletAddress directly to avoid race condition with state update
-      await refreshBalanceForAddress(walletAddress);
+      
+      // Connect to offline wallet to get address
+      const address = await walletClient.connectToOfflineWallet();
+      if (!address) {
+        console.error('Failed to get wallet address from offline wallet');
+      }
     }
   };
 
   const refreshBalance = async () => {
-    if (!walletClient || !address) return;
+    if (!walletClient || !connectionStatus.walletAddress) return;
     try {
-      const bal = await walletClient.getBalance(address);
-      setBalance(bal);
-    } catch (error) {
-      console.error('Failed to get balance:', error);
-    }
-  };
-
-  const refreshBalanceForAddress = async (walletAddress: string) => {
-    if (!walletClient) return;
-    try {
-      const bal = await walletClient.getBalance(walletAddress);
+      const bal = await walletClient.getBalance(connectionStatus.walletAddress);
       setBalance(bal);
     } catch (error) {
       console.error('Failed to get balance:', error);
@@ -108,7 +110,7 @@ export default function Home() {
               onConnect={handleConnect}
               connectionStatus={connectionStatus}
               balance={balance}
-              address={address}
+              address={connectionStatus.walletAddress || ''}
               onRefreshBalance={refreshBalance}
             />
             
@@ -130,7 +132,7 @@ export default function Home() {
               onSendTransaction={handleSendTransaction}
               onSendErc20Transaction={handleSendErc20Transaction}
               disabled={!connectionStatus.connected}
-              fromAddress={address}
+              fromAddress={connectionStatus.walletAddress || ''}
             />
           </div>
         </div>
