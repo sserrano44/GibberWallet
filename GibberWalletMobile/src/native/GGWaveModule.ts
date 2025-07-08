@@ -73,16 +73,26 @@ export interface IGGWaveModule {
   destroy(): Promise<boolean>;
 }
 
+import { mockGGWaveModule, mockEventEmitter } from './GGWaveModuleMock';
+
 /**
  * Native module instance
  * This will be implemented by the iOS native module
+ * Falls back to mock implementation for development
  */
-const GGWaveModuleNative = NativeModules.GGWaveModule as IGGWaveModule;
+const GGWaveModuleNative = NativeModules.GGWaveModule || mockGGWaveModule;
+
+// Log whether we're using the native module or mock
+if (!NativeModules.GGWaveModule) {
+  console.warn('[GGWaveModule] Native module not available, using mock implementation');
+}
 
 /**
  * Event emitter for native module events
  */
-export const GGWaveEventEmitter = new NativeEventEmitter(NativeModules.GGWaveModule);
+export const GGWaveEventEmitter = NativeModules.GGWaveModule 
+  ? new NativeEventEmitter(NativeModules.GGWaveModule)
+  : mockEventEmitter;
 
 /**
  * Event types emitted by the native module

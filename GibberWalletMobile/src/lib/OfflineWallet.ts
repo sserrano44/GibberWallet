@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import { CryptoUtils, EthersTransaction } from './CryptoUtils';
 import { MessageProtocol, Message } from './MessageProtocol';
 import { MessageType, TransactionData } from '../types/MessageTypes';
@@ -29,7 +29,7 @@ export interface OfflineWalletEvents {
 /**
  * Offline wallet component for airgap transaction signing (React Native)
  */
-export class OfflineWallet extends EventEmitter {
+export class OfflineWallet extends EventEmitter<OfflineWalletEvents> {
   private crypto: CryptoUtils | null = null;
   private ggwave: GGWaveModule;
   private isRunning = false;

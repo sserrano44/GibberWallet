@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { Clipboard } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 interface WalletInfoProps {
   address: string;
@@ -14,7 +14,7 @@ export const WalletInfo: React.FC<WalletInfoProps> = ({ address }) => {
 
   const copyToClipboard = async () => {
     try {
-      await Clipboard.setString(address);
+      Clipboard.setString(address);
       Alert.alert('Copied', 'Wallet address copied to clipboard');
     } catch (error) {
       Alert.alert('Error', 'Failed to copy address');

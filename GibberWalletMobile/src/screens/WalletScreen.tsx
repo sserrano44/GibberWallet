@@ -18,8 +18,9 @@ interface WalletScreenProps {
   onReset: () => void;
 }
 
-export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress, onReset }) => {
-  const [wallet] = useState(() => new OfflineWallet());
+export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress: initialAddress, onReset }) => {
+  const [wallet, setWallet] = useState<OfflineWallet | null>(null);
+  const [walletAddress, setWalletAddress] = useState(initialAddress);
   const [isListening, setIsListening] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [currentTransaction, setCurrentTransaction] = useState<TransactionApprovalRequest | null>(null);
@@ -46,41 +47,54 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress, onRes
 
   const initializeWallet = async () => {
     try {
-      setStatusMessage('Loading wallet from secure storage...');
+      setStatusMessage('Creating wallet instance...');
       
-      const success = await wallet.loadFromStorage();
+      const walletInstance = new OfflineWallet();
+      setWallet(walletInstance);
+      
+      setStatusMessage('Loading wallet from secure storage...');
+      const success = await walletInstance.loadFromStorage();
       if (!success) {
         Alert.alert('Error', 'Failed to load wallet from storage');
         onReset();
         return;
       }
 
+      // Get the actual wallet address
+      const address = walletInstance.getAddress();
+      if (address) {
+        setWalletAddress(address);
+      }
+
       setIsInitialized(true);
       setStatusMessage('Wallet ready');
 
       // Set up event listeners
-      wallet.on('transactionRequest', handleTransactionRequest);
-      wallet.on('listeningStarted', () => {
+      walletInstance.on('transactionRequest', handleTransactionRequest);
+      walletInstance.on('listeningStarted', () => {
         setIsListening(true);
         setStatusMessage('Listening for transactions...');
       });
-      wallet.on('listeningStopped', () => {
+      walletInstance.on('listeningStopped', () => {
         setIsListening(false);
         setStatusMessage('Not listening');
       });
-      wallet.on('audioLevelChanged', setAudioLevel);
-      wallet.on('error', handleError);
+      walletInstance.on('audioLevelChanged', setAudioLevel);
+      walletInstance.on('error', handleError);
 
     } catch (error) {
       console.error('Failed to initialize wallet:', error);
-      Alert.alert('Error', 'Failed to initialize wallet');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert('Error', `Failed to initialize wallet: ${errorMessage}`);
       onReset();
     }
   };
 
   const cleanup = async () => {
     try {
-      await wallet.destroy();
+      if (wallet) {
+        await wallet.destroy();
+      }
     } catch (error) {
       console.error('Error during cleanup:', error);
     }
@@ -124,6 +138,11 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress, onRes
   };
 
   const toggleListening = async () => {
+    if (!wallet) {
+      Alert.alert('Error', 'Wallet not initialized');
+      return;
+    }
+    
     try {
       if (isListening) {
         await wallet.stop();
@@ -137,7 +156,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress, onRes
   };
 
   const approveTransaction = async () => {
-    if (!currentTransaction) return;
+    if (!currentTransaction || !wallet) return;
 
     try {
       setStatusMessage('Signing transaction...');
@@ -166,7 +185,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ walletAddress, onRes
   };
 
   const rejectTransaction = async () => {
-    if (!currentTransaction) return;
+    if (!currentTransaction || !wallet) return;
 
     try {
       await wallet.rejectTransaction(currentTransaction.message);
