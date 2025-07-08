@@ -29,10 +29,7 @@ export default function Home() {
     });
     client.on('transactionConfirmed', (receipt: unknown) => {
       console.log('Transaction confirmed:', receipt);
-      // Refresh balance after transaction
-      if (address && config) {
-        refreshBalance();
-      }
+      // Note: Balance will be refreshed manually by user if needed
     });
     client.on('error', (error: Error) => {
       console.error('Wallet error:', error);
@@ -43,7 +40,7 @@ export default function Home() {
     return () => {
       client.destroy();
     };
-  }, [address, config]); // Added dependencies
+  }, []); // No dependencies - wallet client should persist across connections
 
   const handleConnect = async (walletConfig: WalletConfig, walletAddress: string) => {
     if (!walletClient) return;
@@ -52,7 +49,8 @@ export default function Home() {
     if (success) {
       setConfig(walletConfig);
       setAddress(walletAddress);
-      await refreshBalance();
+      // Pass walletAddress directly to avoid race condition with state update
+      await refreshBalanceForAddress(walletAddress);
     }
   };
 
@@ -60,6 +58,16 @@ export default function Home() {
     if (!walletClient || !address) return;
     try {
       const bal = await walletClient.getBalance(address);
+      setBalance(bal);
+    } catch (error) {
+      console.error('Failed to get balance:', error);
+    }
+  };
+
+  const refreshBalanceForAddress = async (walletAddress: string) => {
+    if (!walletClient) return;
+    try {
+      const bal = await walletClient.getBalance(walletAddress);
       setBalance(bal);
     } catch (error) {
       console.error('Failed to get balance:', error);
