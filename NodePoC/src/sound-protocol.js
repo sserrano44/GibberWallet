@@ -26,17 +26,22 @@ async function initializeGgwave() {
         let parameters;
         try {
             parameters = ggwave.getDefaultParameters();
+            console.log('[SOUND] Default parameters:', parameters);
         } catch (paramError) {
+            console.log('[SOUND] Failed to get default parameters:', paramError.message);
             parameters = null;
         }
         
         try {
             ggwaveInstance = ggwave.init(parameters);
+            console.log(`[SOUND] ggwave.init() returned: ${ggwaveInstance}`);
         } catch (initError) {
+            console.log('[SOUND] ggwave.init() failed:', initError.message);
             try {
                 ggwaveInstance = ggwave.init();
+                console.log(`[SOUND] ggwave.init() (no params) returned: ${ggwaveInstance}`);
             } catch (altError) {
-                console.log('[SOUND] Init failed:', altError.message);
+                console.log('[SOUND] Alternative init failed:', altError.message);
             }
         }
         
@@ -253,13 +258,13 @@ export class SoundProtocol {
                 this.audioBuffer.push(...float32Array);
                 
                 // Log audio activity if significant (reduced threshold)
-                if (maxLevel > 0.1) {
-                    console.log(`[SOUND] Audio detected - Level: ${(maxLevel * 100).toFixed(1)}%`);
+                if (maxLevel > 0.05) {
+                    console.log(`[SOUND] Audio detected - Level: ${(maxLevel * 100).toFixed(1)}%, Buffer: ${float32Array.length} samples`);
                 }
                 
-                // Process buffer more frequently for better responsiveness
-                // Process every 0.25 seconds instead of 1 second
-                if (this.audioBuffer.length >= this.sampleRate / 4) {
+                // Process buffer less frequently to allow complete messages
+                // Process every 1 second to capture complete ggwave messages
+                if (this.audioBuffer.length >= this.sampleRate) {
                     this.processAudioBuffer();
                 }
             });
@@ -300,6 +305,23 @@ export class SoundProtocol {
             // Create Float32Array from buffer
             const audioData = new Float32Array(this.audioBuffer);
             
+            // Calculate audio statistics for debugging
+            let maxSample = 0;
+            let avgLevel = 0;
+            for (let i = 0; i < audioData.length; i++) {
+                maxSample = Math.max(maxSample, Math.abs(audioData[i]));
+                avgLevel += Math.abs(audioData[i]);
+            }
+            avgLevel /= audioData.length;
+            
+            // Log decode attempt if audio is significant
+            if (maxSample > 0.01) {
+                console.log(`[SOUND] === DECODE ATTEMPT ===`);
+                console.log(`[SOUND] Buffer size: ${audioData.length} samples`);
+                console.log(`[SOUND] Max amplitude: ${(maxSample * 100).toFixed(2)}%`);
+                console.log(`[SOUND] Average level: ${(avgLevel * 100).toFixed(4)}%`);
+            }
+            
             // Try to decode with ggwave
             try {
                 // Convert Float32Array to Int8Array like GibberWeb does
@@ -307,6 +329,10 @@ export class SoundProtocol {
                 const int8Data = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.length);
                 
                 const decodedData = this.ggwave.decode(this.ggwaveInstance, int8Data);
+                
+                if (maxSample > 0.01) {
+                    console.log(`[SOUND] ggwave.decode returned: ${decodedData ? `${decodedData.length} bytes` : 'null/undefined'}`);
+                }
                 
                 if (decodedData && decodedData.length > 0) {
                     try {
@@ -323,16 +349,28 @@ export class SoundProtocol {
                         return; // Exit early on successful decode
                     } catch (parseError) {
                         // Not a valid message, continue accumulating
+                        if (maxSample > 0.01) {
+                            console.log(`[SOUND] Parse error: ${parseError.message}`);
+                        }
                     }
                 }
                 // No valid data decoded - this is normal for most audio
+                if (maxSample > 0.01) {
+                    console.log(`[SOUND] No valid ggwave data in buffer`);
+                }
             } catch (decodeError) {
                 // This is normal - most audio doesn't contain ggwave data
+                if (maxSample > 0.01) {
+                    console.log(`[SOUND] Decode error: ${decodeError.message}`);
+                }
             }
             
-            // Keep only last second of audio to avoid memory issues
-            if (this.audioBuffer.length > this.sampleRate * 2) {
-                this.audioBuffer = this.audioBuffer.slice(-this.sampleRate);
+            // Keep more audio data to ensure we don't lose ggwave messages
+            // Messages can be up to 10 seconds, so keep 20 seconds to be safe
+            const maxBufferSize = this.sampleRate * 30;
+            const keepSize = this.sampleRate * 20;
+            if (this.audioBuffer.length > maxBufferSize) {
+                this.audioBuffer.splice(0, this.audioBuffer.length - keepSize);
             }
             
         } catch (error) {
