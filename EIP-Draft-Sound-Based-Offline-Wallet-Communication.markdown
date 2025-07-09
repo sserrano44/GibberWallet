@@ -27,8 +27,8 @@ Messages are JSON-encoded objects with the following fields:
 
 - **`version`**: A string indicating the protocol version (e.g., `"1.0"`, `"2.0"`). This allows implementations to support multiple protocol versions and ensures backwards compatibility. The initial version is `"1.0"`.
 - **`type`**: A string indicating the message type. Supported types include:
-  - `"ping"`: Initiates communication from the online device.
-  - `"pong"`: Acknowledgment from the offline wallet.
+  - `"connect"`: Initiates communication from the online device and requests wallet address.
+  - `"connect_response"`: Response from the offline wallet containing wallet address.
   - `"tx_request"`: Transaction request from the online device.
   - `"tx_response"`: Signed transaction response from the offline wallet.
   - `"ack"`: General acknowledgment of message receipt.
@@ -38,13 +38,26 @@ Messages are JSON-encoded objects with the following fields:
 
 #### Payload Examples
 
-- **For `ping` and `pong`:**
+- **For `connect`:**
   ```json
   {
     "version": "1.0",
-    "type": "ping",
+    "type": "connect",
     "payload": {},
     "id": "12345"
+  }
+  ```
+
+- **For `connect_response`:**
+  ```json
+  {
+    "version": "1.0",
+    "type": "connect_response",
+    "payload": {
+      "address": "0x742d35cc6bf8c3f2e4e4fd7a3f1b4c6e7d8e9f0a",
+      "received_id": "12345"
+    },
+    "id": "67890"
   }
   ```
 
@@ -76,17 +89,7 @@ Messages are JSON-encoded objects with the following fields:
     "payload": {
       "signedTransaction": {
         "raw": "0xf86c018609184e72a0008227109400000000000000000000000000000000000000000080801ca0...",
-        "tx": {
-          "nonce": "0x0",
-          "gasPrice": "0x09184e72a000",
-          "gas": "0x2710",
-          "to": "0x0000000000000000000000000000000000000000",
-          "value": "0x0",
-          "input": "0x",
-          "v": "0x1c",
-          "r": "0x...",
-          "s": "0x..."
-        }
+        "hash": "0x9fc76417374aa880d4449a1f7f31ec597f00b1f6f3dd2d66f4c9c6c445836d8b"
       }
     },
     "id": "12345"
@@ -152,20 +155,20 @@ Messages are JSON-encoded objects with the following fields:
 
 The protocol operates as follows:
 
-1. **Initialization:**
-   - The online device plays a `ping` message with the current protocol version to signal readiness.
-   - The offline wallet, upon detecting the `ping`, checks the `version`. If supported, it responds with a `pong` message using the same version; otherwise, it sends an `error`.
+1. **Connection Establishment:**
+   - The online device plays a `connect` message with the current protocol version to signal readiness and request the wallet address.
+   - The offline wallet, upon detecting the `connect`, checks the `version`. If supported, it responds with a `connect_response` message containing the wallet's Ethereum address and using the same version; otherwise, it sends an `error`.
 
 2. **Transaction Request:**
-   - After receiving the `pong`, the online device sends a `tx_request` message containing the unsigned transaction data.
+   - After receiving the `connect_response`, the online device now knows the wallet address and can construct transactions. It sends a `tx_request` message containing the unsigned transaction data.
    - The offline wallet captures the sound, decodes the `tx_request`, verifies the `version`, displays the transaction details to the user for confirmation, and optionally sends an `ack` to confirm receipt.
 
 3. **Transaction Response:**
-   - Upon user approval, the offline wallet signs the transaction, constructs a `tx_response` message with the signed transaction, encodes it into sound, and plays it.
+   - Upon user approval, the offline wallet signs the transaction, constructs a `tx_response` message with the signed transaction (including both the raw signed transaction and its hash), encodes it into sound, and plays it.
    - The online device captures the sound, decodes the `tx_response`, verifies the `version`, and broadcasts the signed transaction to the Ethereum network.
 
 4. **Error Handling:**
-   - If either device fails to receive an expected message within a 5-second timeout, it may retry (e.g., resend `ping` or return to listening mode).
+   - If either device fails to receive an expected message within a 10-second timeout, it may retry (e.g., resend `connect` or return to listening mode).
    - Errors (e.g., corrupted data, unsupported version) are communicated via an `error` message with the appropriate version.
 
 ### Security Considerations
@@ -181,6 +184,8 @@ The protocol operates as follows:
 - **Ubiquitous Hardware:** Most devices have speakers and microphones, making this widely adoptable.
 - **Security:** Short-range audio, user confirmation, and versioned messages provide robust protection, while ggwave's error correction ensures reliability.
 - **Versioning:** The `version` field ensures extensibility and compatibility, allowing future updates without breaking existing implementations.
+- **Automatic Address Discovery:** The `connect`/`connect_response` mechanism eliminates the need for manual wallet address entry, reducing user errors and improving security by ensuring the address comes directly from the offline wallet.
+- **Simplified User Experience:** Users only need to initiate a connection rather than manually copying wallet addresses, making the process more intuitive and less error-prone.
 
 ## Backwards Compatibility
 
@@ -189,14 +194,16 @@ This EIP introduces a new, optional communication method and does not affect exi
 ## Test Cases
 
 1. **Successful Transaction:**
-   - Online device sends `ping` (version `"1.0"`), receives `pong`, sends `tx_request`, and receives `tx_response` with a valid signed transaction.
-2. **Noisy Environment:**
+   - Online device sends `connect` (version `"1.0"`), receives `connect_response` with wallet address, sends `tx_request`, and receives `tx_response` with a valid signed transaction.
+2. **Address Discovery:**
+   - Online device sends `connect`, receives `connect_response` containing the wallet address `0x742d35cc6bf8c3f2e4e4fd7a3f1b4c6e7d8e9f0a`, and can now construct transactions for this address.
+3. **Noisy Environment:**
    - Offline wallet detects a corrupted `tx_request` and either ignores it or sends an `error` message (version `"1.0"`).
-3. **Timeout:**
-   - Online device sends `ping` but receives no `pong` within 5 seconds, then retries successfully.
-4. **Version Mismatch:**
-   - Online device sends `ping` with version `"2.0"`; offline wallet responds with an `error` in version `"1.0"`, indicating unsupported version.
-5. **Security:**
+4. **Timeout:**
+   - Online device sends `connect` but receives no `connect_response` within 10 seconds, then retries successfully.
+5. **Version Mismatch:**
+   - Online device sends `connect` with version `"2.0"`; offline wallet responds with an `error` in version `"1.0"`, indicating unsupported version.
+6. **Security:**
    - A malicious `tx_request` is sent; offline wallet displays it and awaits user rejection.
 
 ## Implementation
