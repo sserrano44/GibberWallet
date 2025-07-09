@@ -23,6 +23,7 @@ export interface ConnectionStatus {
   connected: boolean;
   chainId?: number;
   blockNumber?: number;
+  walletAddress?: string;
   error?: string;
 }
 

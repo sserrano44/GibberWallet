@@ -12,7 +12,7 @@ import {
 } from '@/lib/network-storage';
 
 interface WalletConnectProps {
-  onConnect: (config: WalletConfig, address: string) => void;
+  onConnect: (config: WalletConfig) => void;
   connectionStatus: ConnectionStatus;
   balance: string;
   address: string;
@@ -30,7 +30,6 @@ export default function WalletConnect({
   const [rpcUrl, setRpcUrl] = useState('');
   const [chainId, setChainId] = useState('');
   const [chainName, setChainName] = useState('');
-  const [walletAddress, setWalletAddress] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [networks, setNetworks] = useState<NetworkConfig[]>([]);
   const [showCustomForm, setShowCustomForm] = useState(false);
@@ -42,13 +41,8 @@ export default function WalletConnect({
   const [formError, setFormError] = useState('');
 
   const handleConnect = async () => {
-    if (!selectedNetworkId || !walletAddress) {
-      alert('Please select a network and enter wallet address');
-      return;
-    }
-
-    if (!CryptoUtils.validateAddress(walletAddress)) {
-      alert('Invalid wallet address');
+    if (!selectedNetworkId) {
+      alert('Please select a network');
       return;
     }
 
@@ -67,7 +61,7 @@ export default function WalletConnect({
     };
 
     try {
-      await onConnect(config, walletAddress);
+      await onConnect(config);
     } catch (error) {
       console.error('Connection failed:', error);
     } finally {
@@ -274,18 +268,9 @@ export default function WalletConnect({
             </div>
           )}
 
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Wallet Address
-            </label>
-            <input
-              type="text"
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-              placeholder="0x..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-700">
+            <p className="font-medium">Automatic Address Detection</p>
+            <p className="text-xs mt-1">Your wallet address will be automatically retrieved when you connect via audio.</p>
           </div>
 
           <button
@@ -310,7 +295,9 @@ export default function WalletConnect({
               Address
             </label>
             <div className="text-sm font-mono bg-gray-100 p-2 rounded break-all">
-              {address}
+              {address || (
+                <span className="text-gray-500 italic">Waiting for wallet response...</span>
+              )}
             </div>
           </div>
 
